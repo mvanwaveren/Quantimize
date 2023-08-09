@@ -14,7 +14,7 @@ with open(base_dir+"/quantimize/data/bada_data.json", "rb") as f:
     flight_level_data = json.loads(f.read().decode("utf-8"))
 with open(base_dir+"/quantimize/data/flights.json", "rb") as f:
     flight_data = json.loads(f.read().decode("utf-8"))
-nc = Dataset(base_dir+"/quantimize/data/aCCf_0623_p_spec.nc")
+nc = Dataset(base_dir+"/quantimize/data/aCCF_0623_p_spec.nc")
 
 
 def get_flight_info(flight_nr):
