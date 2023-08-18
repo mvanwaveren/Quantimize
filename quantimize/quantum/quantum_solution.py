@@ -24,7 +24,7 @@ def sample_grid():
     # Without the coefficient -1, we would obtain a maximization problem.
 
     # The cost grid - the value represents the cost to travel through that grid, with dimension N x N
-    # The cost should be computed mainly based on atmospheric data, plus a penalty by deviating from the 
+    # The cost should be computed mainly based on climate level data, plus a penalty by deviating from the 
     # straight-line solution. The idea behind is that a grid too far away from the straight-line solution should be
     # costly even if the non-CO2 emission there is low, because the CO2 emission, which depends solely on distance of 
     # travel, will be high.
@@ -108,11 +108,13 @@ def create_vcg(n, orientation=0):  #voxel_center_graph
     return vcg
 
 
-def construct_function(cg, orientation=0):
+def construct_function(cg, orientation=0, verbose=False):
     """Constructs the mathematical function to be optimized
 
     Args:
         cg: cost grid
+        orientation: orientation of the graph
+        verbose
 
     Returns:
         sympyfunction, dict: mathematical sympy function with coefficients
@@ -126,14 +128,24 @@ def construct_function(cg, orientation=0):
     
     wv, wh = obtain_weight_matrices(cg)
     
+    if verbose:
+        print('cost grid', '\n', cg)
+        print('number of rows of cost grid', n)
+        print('interaction strengths (edges)', '\n', 'vertical', '\n', wv, '\n', 'horizontal', '\n', wh)
+        print('initial voxel center graph', '\n', vcg)
+    
     # construct the Pauli operators Zij 
-    for i in range(1,n-1):
+    for i in range(1, n-1):
         for j in range(1, n-1):
             globals()['Z%s %x' % (i, j)] = sp.symbols('Z'+str(i)+str(j))
+            if verbose:
+                print(globals()['Z%s %x' % (i, j)])
         
     # for each qubit, add its contribution to the total cost function
-    for i in range(1,n-1):
+    for i in range(1, n-1):
         for j in range(1, n-1):
+            if verbose:
+                print('i = ', i, '; j = ', j)
             term = 0
             if vcg[i-1][j] == 0:  # Check if neighbor up is variable or fixed
                 term += globals()['Z%s %x' % (i-1, j)] * globals()['Z%s %x' % (i, j)] * wv[i-1][j] / 2 
@@ -141,11 +153,19 @@ def construct_function(cg, orientation=0):
             else:
                 term += vcg[i-1][j] * globals()['Z%s %x' % (i, j)] * wv[i-1][j]
             
+            if verbose:
+                print('vcg[i-1][j]', vcg[i-1][j])
+                print('first term :', term)
+            
             if vcg[i+1][j] == 0:  # Check if neighbor down is variable or fixed
                 term += globals()['Z%s %x' % (i+1, j)] * globals()['Z%s %x' % (i, j)]  * wv[i][j] / 2 
                 # divide by 2 because each edge joining two variable qubits will be counted twice
             else:
                 term += vcg[i+1][j] * globals()['Z%s %x' % (i, j)] * wv[i][j]
+
+            if verbose:
+                print('vcg[i+1][j]', vcg[i+1][j])
+                print('second term :', term)
 
             if vcg[i][j-1] == 0:  # Check if neighbor left is variable or fixed
                 term += globals()['Z%s %x' % (i, j-1)] * globals()['Z%s %x' % (i, j)]  * wh[i][j-1] / 2 
@@ -153,18 +173,27 @@ def construct_function(cg, orientation=0):
             else:
                 term += vcg[i][j-1] * globals()['Z%s %x' % (i, j)] * wh[i][j-1]
                 
+            if verbose:
+                print('vcg[i][j-1]', vcg[i][j-1])
+                print('third term :', term)
+
             if vcg[i][j+1] == 0:  # Check if neighbor right is variable or fixed
                 term += globals()['Z%s %x' % (i, j+1)] * globals()['Z%s %x' % (i, j)]  * wh[i][j] / 2 
                 # divide by 2 because each edge joining two variable qubits will be counted twice
             else:
                 term += vcg[i][j+1] * globals()['Z%s %x' % (i, j)] * wh[i][j]
             
+            if verbose:
+                print('vcg[i][j+1]', vcg[i][j+1])
+                print('fourth term :', term)
+            
             function += term
                 
-    print('Cost function in Ising Hamiltonian form:', function)
+    if verbose:
+        print('Cost function in Ising Hamiltonian form:', '\n', function)
     
-    # map the Pauli Z variable {-1, 1} to variable x {0, 1} by doing Z = 2x-1
-    for i in range(1,n-1):
+    # map the Pauli Z variable {-1, 1} to variable q {0, 1} by doing Z => 2q-1
+    for i in range(1, n-1):
         for j in range(1, n-1):
             function = function.subs(sp.symbols('Z'+str(i)+str(j)), 1 - 2*sp.symbols('q'+str(i)+str(j)))
         coeffs = sp.Poly(function).as_dict()
@@ -172,9 +201,10 @@ def construct_function(cg, orientation=0):
         # expand and simplify the cost function
     function = sp.expand(function)
     
-    print('Cost function in QUBO form:', function)
+    if verbose:
+        print('Cost function in QUBO form:', '\n', function)
         
-    # function in sympy form and coefficients of all terms in an easily readble dictionary form returned
+    # function in sympy form and coefficients of all terms in an easily readable dictionary form returned
     return function, coeffs
 
 
@@ -182,7 +212,7 @@ def generate_QP(coeffs, n, verbose=False):
     """Generates the Quadratic Program to be optimized
 
     Args:
-        coeffs (dict): Contains the coefficients from the sympy funciton
+        coeffs (dict): Contains the coefficients from the sympy function
         n (int): Number of hydraulic heads
 
     Returns:
@@ -228,9 +258,11 @@ def run_QAOA(cg, orientation=0, verbose=False, backend=Aer.get_backend('qasm_sim
     """
     n = len(cg)
     # Create the mathematical function
-    function, coeffs = construct_function(cg, orientation=orientation)
     if verbose:
-        print('Function in Sympy:', function)
+        print('call construct_function')
+    function, coeffs = construct_function(cg, orientation=orientation, verbose=verbose)
+    if verbose:
+        print('Function in Sympy:', '\n', function)
     # Generate the quadratic problem and solve it with Qiskit
     qp = generate_QP(coeffs, n, verbose)
     qins = QuantumInstance(backend=backend, shots=1000, seed_simulator=123)
@@ -241,7 +273,7 @@ def run_QAOA(cg, orientation=0, verbose=False, backend=Aer.get_backend('qasm_sim
     q_sol = result.x
     #q_sol = np.array([int((i+1)%2) for i in result.x])
     if verbose:
-        print('\nrun time:', result.min_eigen_solver_result.optimizer_time)
+        print('\n', 'run time:', result.min_eigen_solver_result.optimizer_time)
         print('result in Pauli-Z form:', z_sol)
         print('result in qubit form:', q_sol)
     vcg = create_vcg(n, orientation)
@@ -323,6 +355,7 @@ def run_QAOA_real_backend(cg, orientation=0, verbose=False):
     op = construct_operator_for_runtime(cg, orientation=orientation)
     options = {
         'backend_name': 'ibmq_guadalupe'
+#       'backend_name': 'ibmq_qasm_simulator'
     }
 
     runtime_inputs = {
@@ -397,9 +430,9 @@ def run_QAOA_real_backend(cg, orientation=0, verbose=False):
 
     IBMQ.load_account()
     provider = IBMQ.get_provider(
-        hub='deloitte-event',
-        group='finalist',
-        project='recveveo3rbz2kyt'
+        hub='ibm-q',
+        group='open',
+        project='main'
     )
 
     job = provider.runtime.run(

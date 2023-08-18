@@ -89,7 +89,7 @@ def make_atmo_map(FL, time):
     cbar = map.colorbar(cs, location="bottom", pad="10%")
     cbar.set_label("Delta C")
     # map.drawgreatcircle(-20,40,20,60)
-    plt.title("Atmospheric data map. Time:" +
+    plt.title("Climate effect data map. Time: " +
               available_time+" FL: "+available_fl)
     plt.show()
 
